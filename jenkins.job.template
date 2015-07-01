@@ -1,0 +1,7 @@
+chmod 777 $WORKSPACE
+rm -rf $WORKSPACE/*
+export LOGDIR=$WORKSPACE
+export ILO_DRIVER=iscsi_ilo
+export BOOT_MODE=bios
+export ILO_HWINFO="<ip-address-of-ilo> <mac-address> <username> <password> [<root-device-hint>]"
+sudo -E -H -u ubuntu stdbuf -oL -eL /home/ubuntu/gate/gate.sh
