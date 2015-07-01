@@ -49,7 +49,7 @@ function run_stack {
     cp /opt/stack/devstack/localrc /opt/stack/logs
     cd /opt/stack/devstack
     ./unstack.sh
-    rm -rf /opt/stack/data/*
+    sudo rm -rf /opt/stack/data/*
     ./stack.sh
 
     source /opt/stack/devstack/openrc admin admin
@@ -62,6 +62,9 @@ function run_stack {
     screen -S stack -p ir-cond -X stuff 
     screen -S stack -p ir-cond -X stuff '/usr/local/bin/ironic-conductor --config-file=/etc/ironic/ironic.conf & echo $! >/opt/stack/status/stack/ir-cond.pid; fg || echo "ir-cond failed to start" | tee "/opt/stack/status/stack/ir-cond.failure"\r'
 
+    # Sleep for a while till conductor is back up and running.
+    sleep 10
+
     # Copy elilo.efi (temporary workaround - add it to devstack)
     DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
     cp $DIR/elilo.efi /opt/stack/data/ironic/tftpboot
@@ -73,6 +76,13 @@ function run_stack {
     ILO_IP=$(awk '{print $1}' $ILO_HWINFO_FILE)
     ILO_USERNAME=$(awk '{print $3}' $ILO_HWINFO_FILE)
     ILO_PASSWORD=$(awk '{print $4}' $ILO_HWINFO_FILE)
+
+    # Fix for some machines which needs root device hint
+    ROOT_DEVICE_HINT=$(awk '{print $5}' $ILO_HWINFO_FILE)
+    if [[ -n "$ROOT_DEVICE_HINT" ]]; then
+        ironic node-update $IRONIC_NODE add properties/root_device="{\"size\": \"$ROOT_DEVICE_HINT\"}"
+    fi
+
     ssh-keygen -R $ILO_IP
     ssh-keyscan -H $ILO_IP > ~/.ssh/known_hosts
     sshpass -p $ILO_PASSWORD ssh $ILO_IP -l $ILO_USERNAME vsp >& $LOGDIR/console &
