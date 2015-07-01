@@ -30,11 +30,19 @@ function update_proliantutils {
     sudo -E pip install /opt/stack/proliantutils
 }
 
-function stop_console {
-    PID=$(pidof sshpass || true)
+function stop_process {
+    PID=$(pidof $1 || true)
     if [[ -n "$PID" ]]; then
-        STOP=$(kill $PID)
+        STOP=$(sudo kill $PID)
     fi
+}
+
+function stop_console {
+    stop_process "sshpass"
+}
+
+function stop_tcpdump {
+    stop_process "tcpdump"
 }
 
 function run_stack {
@@ -73,6 +81,8 @@ function run_stack {
     export OS_TEST_TIMEOUT=3000
 
     stop_console
+    stop_tcpdump
+
     ILO_IP=$(awk '{print $1}' $ILO_HWINFO_FILE)
     ILO_USERNAME=$(awk '{print $3}' $ILO_HWINFO_FILE)
     ILO_PASSWORD=$(awk '{print $4}' $ILO_HWINFO_FILE)
@@ -83,9 +93,18 @@ function run_stack {
         ironic node-update $IRONIC_NODE add properties/root_device="{\"size\": \"$ROOT_DEVICE_HINT\"}"
     fi
 
+    # Enable console logging
     ssh-keygen -R $ILO_IP
     ssh-keyscan -H $ILO_IP > ~/.ssh/known_hosts
     sshpass -p $ILO_PASSWORD ssh $ILO_IP -l $ILO_USERNAME vsp >& $LOGDIR/console &
+
+    # Enable tcpdump for pxe_ilo driver
+    if [[ "$ILO_DRIVER" = "pxe_ilo" ]]; then
+        INTERFACE=$(awk -F'=' '/PUBLIC_INTERFACE/{print $2}' /opt/stack/devstack/localrc)
+        if [[ -n "$INTERFACE" ]]; then
+            sudo tcpdump -i $INTERFACE >& $LOGDIR/tcpdump &
+        fi
+    fi
 
     number_of_machines=$(wc -l $ILO_HWINFO_FILE | awk '{print $1}')
     for i in `seq 1 $number_of_machines`
@@ -93,13 +112,8 @@ function run_stack {
         tox -eall -- --concurrency=1 test_baremetal_server_ops
     done
 
-    # Wait for all jobs to complete
-    # wait
     stop_console
-
-    #cd /opt/stack/devstack
-    #./unstack.sh
-
+    stop_tcpdump
 }
 
 update_proliantutils
