@@ -62,11 +62,17 @@ function run_stack {
 
     source /opt/stack/devstack/openrc admin admin
     IRONIC_NODE=$(ironic node-list | grep -v UUID | grep \w | awk '{print $2}' | tail -n1)
-    ironic node-update $IRONIC_NODE add properties/capabilities="boot_mode:$BOOT_MODE"
+    CAPABILITIES="boot_mode:$BOOT_MODE"
+    if [[ "$BOOT_OPTION" = "local" ]]; then
+        CAPABILITIES="$CAPABILITIES,boot_option:local"
+        nova flavor-key baremetal set capabilities:boot_option="local"
+    fi
+    ironic node-update $IRONIC_NODE add properties/capabilities="$CAPABILITIES"
 
     # Temporary workaround until bug/1466729 is fixed
     cd /opt/stack/ironic
     git fetch https://rameshg87@review.openstack.org/openstack/ironic refs/changes/36/193436/5 && git cherry-pick FETCH_HEAD
+
     screen -S stack -p ir-cond -X stuff 
     screen -S stack -p ir-cond -X stuff '/usr/local/bin/ironic-conductor --config-file=/etc/ironic/ironic.conf & echo $! >/opt/stack/status/stack/ir-cond.pid; fg || echo "ir-cond failed to start" | tee "/opt/stack/status/stack/ir-cond.failure"\r'
 
@@ -102,7 +108,7 @@ function run_stack {
     if [[ "$ILO_DRIVER" = "pxe_ilo" ]]; then
         INTERFACE=$(awk -F'=' '/PUBLIC_INTERFACE/{print $2}' /opt/stack/devstack/localrc)
         if [[ -n "$INTERFACE" ]]; then
-            sudo tcpdump -i $INTERFACE >& $LOGDIR/tcpdump &
+            sudo tcpdump -i $INTERFACE | grep -i DHCP >& $LOGDIR/tcpdump &
         fi
     fi
 
