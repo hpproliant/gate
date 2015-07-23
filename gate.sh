@@ -17,6 +17,7 @@ source /proxy
 export PATH=$PATH:/var/lib/gems/1.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
 export DIB_DEPLOY_ISO_KERNEL_CMDLINE_ARGS="console=ttyS1"
 DISTRO=ubuntu
+export BOOT_OPTION=${BOOT_OPTION:-}
 
 function update_proliantutils {
     if [[ -d /opt/stack/proliantutils ]]; then
@@ -45,6 +46,15 @@ function stop_tcpdump {
     stop_process "tcpdump"
 }
 
+# Workaround for killing left over glance processes
+# TODO: Need to figure out why this happens.
+function kill_glance_processes {
+    for i in `ps -ef | grep -i '[g]lance' | awk '{print $2}'`
+    do
+        STOP=$(sudo kill $i)
+    done
+}
+
 function run_stack {
     export IRONIC_DEPLOY_IMAGE_PREFERRED_DISTRO=$DISTRO
 
@@ -56,8 +66,11 @@ function run_stack {
 
     cp /opt/stack/devstack/localrc /opt/stack/logs
     cd /opt/stack/devstack
+
     ./unstack.sh
+    kill_glance_processes
     sudo rm -rf /opt/stack/data/*
+
     ./stack.sh
 
     source /opt/stack/devstack/openrc admin admin
@@ -69,15 +82,11 @@ function run_stack {
     fi
     ironic node-update $IRONIC_NODE add properties/capabilities="$CAPABILITIES"
 
-    # Temporary workaround until bug/1466729 is fixed
-    cd /opt/stack/ironic
-    git fetch https://rameshg87@review.openstack.org/openstack/ironic refs/changes/36/193436/5 && git cherry-pick FETCH_HEAD
+    #screen -S stack -p ir-cond -X stuff 
+    #screen -S stack -p ir-cond -X stuff '/usr/local/bin/ironic-conductor --config-file=/etc/ironic/ironic.conf & echo $! >/opt/stack/status/stack/ir-cond.pid; fg || echo "ir-cond failed to start" | tee "/opt/stack/status/stack/ir-cond.failure"\r'
 
-    screen -S stack -p ir-cond -X stuff 
-    screen -S stack -p ir-cond -X stuff '/usr/local/bin/ironic-conductor --config-file=/etc/ironic/ironic.conf & echo $! >/opt/stack/status/stack/ir-cond.pid; fg || echo "ir-cond failed to start" | tee "/opt/stack/status/stack/ir-cond.failure"\r'
-
-    # Sleep for a while till conductor is back up and running.
-    sleep 10
+    # Sleep for a while for resource changes to be reflected.
+    sleep 60
 
     # Copy elilo.efi (temporary workaround - add it to devstack)
     DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
@@ -121,6 +130,7 @@ function run_stack {
     stop_console
     stop_tcpdump
 }
+
 
 update_proliantutils
 run_stack
